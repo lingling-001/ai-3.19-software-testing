@@ -18,10 +18,10 @@ By the end of this lesson, learners will be able to:
 | Part | Topic | Time |
 |---|---|---|
 | 1 | Introduction to Software Testing | 10 min |
-| 2 | Unit Testing with JUnit (incl. activity) | 50 min |
+| 2 | Unit Testing with JUnit (incl. activity) | 45 min |
 | — | Break | 10 min |
-| 3 | Service Layer Testing with Mockito | 45 min |
-| 4 | Integration Testing with MockMvc | 45 min |
+| 3 | Service Layer Testing with Mockito | 40 min |
+| 4 | Integration Testing with MockMvc | 50 min |
 | — | Wrap-up | 5 min |
 
 ---
@@ -100,12 +100,28 @@ Notice that `calculateAge` takes the current year as a parameter instead of call
 
 > 📖 **Self Reading — Why pass the year in:** If the method read the system clock internally, the test would have to calculate the expected answer using the same clock, which means the test proves nothing. Worse, a test written this year could start failing on the 1st of January. Passing time-dependent values in as parameters — or injecting a `Clock` in a larger system — is standard practice precisely because it makes the logic deterministic and testable.
 
-### Writing the Test
+### Creating the Test Class
 
-Test files must mirror the source folder structure:
+Test files must mirror the source folder structure exactly:
 
 - Source: `src/main/java/sg/edu/ntu/simple_crm/service/DemoService.java`
 - Test: `src/test/java/sg/edu/ntu/simple_crm/service/DemoServiceTest.java`
+
+Spring Initializr only creates `SimpleCrmApplicationTests.java`. Every other test folder and file is created by you.
+
+The quickest way is to let VS Code do it:
+
+1. Open `DemoService.java` and **click inside the editor** (not the file explorer)
+2. Right-click → **Source Action...** → **Generate Tests...**
+3. Select the methods to generate stubs for, and confirm
+
+VS Code creates the mirrored folder path, the test class, the correct `package` line and a stub for each method. This avoids the most common setup error, which is a package declaration that does not match the folder path.
+
+> ⚠️ **If the option does not appear:** the cursor must be inside the Java editor, not the file explorer. Searching `Java: Generate Tests` in the Command Palette is unreliable across extension versions — use the right-click Source Action route. As a fallback, create the `service` folder and `DemoServiceTest.java` manually under `src/test/java/sg/edu/ntu/simple_crm/` and type the package line yourself.
+
+The generator produces method names like `testCalculateAge` and leaves methods package-private. We will rename them to the convention below. Package-private is valid in JUnit 5 — unlike JUnit 4, `public` is no longer required — but we use `public` here for consistency.
+
+### Writing the Test
 
 Every unit test follows three steps, known as the **Arrange-Act-Assert** pattern (also called Given-When-Then):
 
@@ -171,22 +187,9 @@ So `calculateAge_validYear_returnsCorrectAge`. When a build fails at 2am, the te
 
 > 📖 **Self Reading — Other naming styles:** A BDD (Behaviour Driven Development) style also exists: `givenValidYear_whenCalculateAge_thenReturnCorrectAge`. BDD writes tests in near-English so non-technical stakeholders can read them. Either convention is fine — consistency within a codebase matters more than which one you pick.
 
-### Adding a Second Test
-
-```java
-  @Test
-  public void formatFullName_validNames_returnsFullName() {
-    DemoService demoService = new DemoService();
-
-    String actual = demoService.formatFullName("Clint", "Barton");
-
-    assertEquals("Clint Barton", actual);
-  }
-```
-
 ### Reducing Repetition with `@BeforeEach`
 
-Both tests create a new `DemoService`. We can move that into a lifecycle method that runs before every test:
+Once you have more than one test, every one of them starts by creating a `DemoService`. That repetition can move into a lifecycle method that runs before every test:
 
 ```java
 public class DemoServiceTest {
@@ -202,7 +205,7 @@ public class DemoServiceTest {
 }
 ```
 
-A fresh instance is created before each test, which keeps tests independent — no test can leave state behind that affects the next one.
+A fresh instance is created before each test, which keeps tests independent — no test can leave state behind that affects the next one. You will use this in the activity.
 
 > 📖 **Self Reading — Full lifecycle annotations:**
 >
@@ -230,21 +233,21 @@ A fresh instance is created before each test, which keeps tests independent — 
 
 > 📖 **Self Reading — Generating an HTML report:** Running `mvn surefire-report:report` produces `target/site/surefire-report.html`, showing which tests passed, failed, and how long each took. In practice you rarely run this locally — CI pipelines (GitHub Actions, Jenkins) generate and publish it automatically on every push so the whole team can see results without checking out the code.
 
-### 👨‍💻 Activity (10 minutes)
+### 👨‍💻 Activity (15 minutes)
 
-Add these two methods to `DemoService` and write a unit test for each in `DemoServiceTest`:
+Write a unit test for `formatFullName`, which already exists in `DemoService`, and then add this method and test it as well:
 
 ```java
 public boolean isSeniorCustomer(int yearOfBirth, int currentYear) {
     return (currentYear - yearOfBirth) >= 60;
 }
-
-public String getInitials(String firstName, String lastName) {
-    return firstName.charAt(0) + "." + lastName.charAt(0) + ".";
-}
 ```
 
-Follow the Arrange-Act-Assert pattern and the `methodName_scenario_expectedBehaviour` naming convention.
+Requirements:
+
+- Follow the Arrange-Act-Assert pattern
+- Use the `methodName_scenario_expectedBehaviour` naming convention
+- Use `@BeforeEach` so neither test creates its own `DemoService`
 
 **Think about:** for `isSeniorCustomer`, what happens at exactly 60? Write a test for the boundary, not just an obvious case in the middle. Boundary conditions are where most production bugs actually live.
 
@@ -356,33 +359,6 @@ public void createCustomer_validCustomer_returnsSavedCustomer() {
 }
 ```
 
-### Test Get Customer
-
-```java
-@Test
-public void getCustomer_existingId_returnsCustomer() {
-  // 1. ARRANGE
-  Customer customer = Customer.builder()
-      .firstName("Clint").lastName("Barton")
-      .email("clint@avengers.com").contactNo("12345678")
-      .jobTitle("Special Agent").yearOfBirth(1975)
-      .build();
-
-  Long customerId = 1L;
-
-  // Optional.of(customer) is how the repository signals "record found"
-  when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
-
-  // 2. ACT
-  Customer retrievedCustomer = customerService.getCustomer(customerId);
-
-  // 3. ASSERT
-  assertEquals(customer, retrievedCustomer);
-}
-```
-
-> 📖 **Self Reading — Why `Optional`:** Spring Data JPA's `findById()` returns `Optional<Customer>` rather than `Customer`. An `Optional` either holds a value (`Optional.of(customer)`) or is empty (`Optional.empty()`). This forces the caller to handle the not-found case explicitly instead of returning `null` and hoping someone checks.
-
 ### Test Get Customer Not Found
 
 ```java
@@ -400,6 +376,8 @@ public void getCustomer_missingId_throwsCustomerNotFoundException() {
 ```
 
 `assertThrows(ExceptionClass, lambda)` runs the lambda and verifies the expected exception is thrown. If no exception is thrown, the test fails.
+
+Spring Data JPA's `findById()` returns `Optional<Customer>` rather than `Customer`. An `Optional` either holds a value (`Optional.of(customer)`) or is empty (`Optional.empty()`). Here we program the mock to return empty, which is how the repository signals "no record found" — and that is what drives the service into throwing. Returning `Optional` instead of `null` forces the caller to handle the missing case explicitly.
 
 This test is where the exception handling from Lesson 3.16 pays off. Testing the failure path is at least as important as testing the happy path — most production incidents happen on paths nobody tested.
 
@@ -499,23 +477,9 @@ public void getCustomerById_existingId_returnsOk() throws Exception {
 }
 ```
 
-### Test Get All Customers
+This test relies on the `DataLoader` having created a customer with ID 1, which is safe here because `spring.jpa.hibernate.ddl-auto=create` drops and recreates the schema on every startup.
 
-```java
-@Test
-public void getAllCustomers_returnsAllRecords() throws Exception {
-  RequestBuilder request = MockMvcRequestBuilders.get("/customers");
-
-  mockMvc.perform(request)
-      .andExpect(status().isOk())
-      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-      .andExpect(jsonPath("$.size()").value(4));
-}
-```
-
-This test asserts exactly 4 customers, which works because our `DataLoader` preloads 4 records and `spring.jpa.hibernate.ddl-auto=create` drops and recreates the schema on every startup.
-
-Be aware this is a fragile pattern. On a shared or persistent database, where data accumulates between runs, an exact-count assertion breaks for reasons unrelated to the code being tested. In that situation you would assert `jsonPath("$.size()").value(greaterThan(0))` instead, or control the test data explicitly. This is exactly why `@Transactional` rollback and controlled fixtures matter in a real pipeline.
+Be aware this is a fragile pattern in general. On a shared or persistent database, where data accumulates between runs, assertions on specific IDs or exact record counts break for reasons that have nothing to do with the code under test. This is exactly why `@Transactional` rollback and controlled test data matter in a real pipeline.
 
 ### Test Valid Customer Creation
 
