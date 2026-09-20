@@ -155,6 +155,8 @@ public class DemoServiceTest {
 
 Run the test by clicking the green arrow in the gutter next to the method. A passing test shows a green tick and **no console output** — silence means success. Output appears only on failure, showing expected versus actual.
 
+To run every test in the project at once, use `./mvnw test` from the terminal. This is the same command your CI pipeline runs.
+
 Note that we created the object with `new`. Unit tests do not start the Spring context, so there are no beans to inject. This is exactly why they run in milliseconds.
 
 > 📖 **Self Reading — Why `new` instead of DI:** The fact that a class can be tested with a plain `new` is a sign it is well designed. If a class cannot be instantiated without the Spring container, that is a coupling problem, not a testing problem.
@@ -191,6 +193,8 @@ So `calculateAge_validYear_returnsCorrectAge`. When a build fails at 2am, the te
 
 Once you have more than one test, every one of them starts by creating a `DemoService`. That repetition can move into a lifecycle method that runs before every test:
 
+Add the import `org.junit.jupiter.api.BeforeEach`, then refactor the class:
+
 ```java
 public class DemoServiceTest {
 
@@ -201,11 +205,21 @@ public class DemoServiceTest {
     demoService = new DemoService();
   }
 
-  // tests no longer need to instantiate DemoService
+  @Test
+  public void calculateAge_validYear_returnsCorrectAge() {
+    // 1. ARRANGE — demoService already created by init()
+    int expectedAge = 35;
+
+    // 2. ACT
+    int actualAge = demoService.calculateAge(1990, 2025);
+
+    // 3. ASSERT
+    assertEquals(expectedAge, actualAge, "Age should be current year minus year of birth");
+  }
 }
 ```
 
-A fresh instance is created before each test, which keeps tests independent — no test can leave state behind that affects the next one. You will use this in the activity.
+The `new DemoService()` line is gone from the test itself. A fresh instance is created before every test method, which keeps tests independent — no test can leave state behind that affects the next one. You will use this in the activity.
 
 > 📖 **Self Reading — Full lifecycle annotations:**
 >
@@ -235,7 +249,13 @@ A fresh instance is created before each test, which keeps tests independent — 
 
 ### 👨‍💻 Activity (15 minutes)
 
-Write a unit test for `formatFullName`, which already exists in `DemoService`, and then add this method and test it as well:
+There are two tasks. Both tests go in `DemoServiceTest`.
+
+**Task 1 — test an existing method.**
+`formatFullName` is already in `DemoService`. Write a unit test for it. You only write the test; the method is already there.
+
+**Task 2 — add a new method, then test it.**
+Add `isSeniorCustomer` to `DemoService`, then write a unit test for it:
 
 ```java
 public boolean isSeniorCustomer(int yearOfBirth, int currentYear) {
@@ -243,11 +263,11 @@ public boolean isSeniorCustomer(int yearOfBirth, int currentYear) {
 }
 ```
 
-Requirements:
+**Requirements for both tests:**
 
 - Follow the Arrange-Act-Assert pattern
 - Use the `methodName_scenario_expectedBehaviour` naming convention
-- Use `@BeforeEach` so neither test creates its own `DemoService`
+- Rely on the `@BeforeEach` method — neither test should create its own `DemoService`
 
 **Think about:** for `isSeniorCustomer`, what happens at exactly 60? Write a test for the boundary, not just an obvious case in the middle. Boundary conditions are where most production bugs actually live.
 
@@ -405,12 +425,29 @@ Unit tests validate components in isolation. Integration tests validate that the
 - Source: `src/main/java/sg/edu/ntu/simple_crm/controller/CustomerController.java`
 - Test: `src/test/java/sg/edu/ntu/simple_crm/controller/CustomerControllerTest.java`
 
-These static imports are required — without them `status()`, `content()` and `jsonPath()` will not resolve:
+The static imports on `MockMvcResultMatchers` and `MockMvcRequestBuilders` are essential — without them `status()`, `content()` and `jsonPath()` will not resolve.
 
 ```java
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+package sg.edu.ntu.simple_crm.controller;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import sg.edu.ntu.simple_crm.model.Customer;
 ```
+
+> ⚠️ **Import gotcha:** use `org.springframework.transaction.annotation.Transactional`, **not** `jakarta.transaction.Transactional`. Both will compile and VS Code often suggests the wrong one first, but only the Spring version gives you automatic rollback in tests.
 
 ```java
 @SpringBootTest
@@ -458,13 +495,12 @@ MockMvcRequestBuilders.delete("/customers/1") // DELETE
 
 > 📖 **Self Reading — JsonPath:** JsonPath is a query language for JSON. `$` is the root of the response. `$.id` means "the `id` field at the root", `$.size()` means "the size of the root array". If the API returns `{"id": 1, "firstName": "John"}`, then `jsonPath("$.firstName").value("John")` asserts that field equals `"John"`.
 
-All test methods below go inside the `CustomerControllerTest` class body.
+All test methods below go inside the `CustomerControllerTest` class body. Each one declares `throws Exception`, because `mockMvc.perform()` is a checked-exception method — there is nothing to handle, the test simply fails if it throws.
 
 ### Test Get Customer by ID
 
 ```java
 @Test
-@DisplayName("Get customer by Id")
 public void getCustomerById_existingId_returnsOk() throws Exception {
   // Step 1: Build a GET request to /customers/1
   RequestBuilder request = MockMvcRequestBuilders.get("/customers/1");
