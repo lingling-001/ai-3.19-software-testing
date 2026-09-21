@@ -157,6 +157,8 @@ Run the test by clicking the green arrow in the gutter next to the method. A pas
 
 To run every test in the project at once, use `./mvnw test` from the terminal. This is the same command your CI pipeline runs.
 
+> ⚠️ **No green arrow in the gutter?** This usually means the Java language server has lost track of the file, and it happens most often right after you add a new method to a class in `main` while the test file is open. Run **Java: Clean Java Language Server Workspace** from the Command Palette and let VS Code reload. The arrows come back. Check the Problems panel first, though — a compile error anywhere in the test file hides the arrows for every test in it, not just the broken one.
+
 Note that we created the object with `new`. Unit tests do not start the Spring context, so there are no beans to inject. This is exactly why they run in milliseconds.
 
 > 📖 **Self Reading — Why `new` instead of DI:** The fact that a class can be tested with a plain `new` is a sign it is well designed. If a class cannot be instantiated without the Spring container, that is a coupling problem, not a testing problem.
@@ -247,6 +249,47 @@ The `new DemoService()` line is gone from the test itself. A fresh instance is c
 
 > 📖 **Self Reading — Generating an HTML report:** Running `mvn surefire-report:report` produces `target/site/surefire-report.html`, showing which tests passed, failed, and how long each took. In practice you rarely run this locally — CI pipelines (GitHub Actions, Jenkins) generate and publish it automatically on every push so the whole team can see results without checking out the code.
 
+### Testing the Same Method with Many Values
+
+The test above proves `calculateAge` works for one pair of years. What if we want to check several — a normal case, the boundary, someone born this year?
+
+Writing a separate `@Test` for each would mean four near-identical methods. JUnit has a better way:
+
+```java
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+```
+
+```java
+@ParameterizedTest
+@CsvSource({
+    "1990, 2025, 35",
+    "1965, 2025, 60",
+    "2000, 2025, 25",
+    "2025, 2025, 0"
+})
+public void calculateAge_variousYears_returnsCorrectAge(int yearOfBirth, int currentYear, int expectedAge) {
+    // 1. ACT
+    int actualAge = demoService.calculateAge(yearOfBirth, currentYear);
+
+    // 2. ASSERT
+    assertEquals(expectedAge, actualAge);
+}
+```
+
+Each row becomes the method's parameters, in order. Row 1 supplies `yearOfBirth = 1990`, `currentYear = 2025`, `expectedAge = 35`.
+
+Four things to notice:
+
+- **`@ParameterizedTest` replaces `@Test`.** Do not use both.
+- **Each row runs as a separate test.** Four rows means four entries in the test tree, each labelled with its values. If only the 1965 row fails, the other three still show green — you see exactly which input broke.
+- **The expected values are still hardcoded**, one per row. That never changes. You are listing your known-good answers in a table instead of scattering them across methods. Adding a fifth case is one more line, not a new method.
+- **`@CsvSource` has nothing to do with CSV files.** No file is read. It is just a convenient way to write rows as comma-separated strings inline.
+
+Use a plain `@Test` when one example proves the behaviour. Use `@ParameterizedTest` when you are checking the same rule across a range of inputs — which in practice usually means boundaries and edge cases.
+
+> 📖 **Self Reading — Parameterized test sources:** `@CsvSource` is the most common, but JUnit also offers `@ValueSource` for a single parameter, `@EnumSource` for every value of an enum, `@MethodSource` for programmatically generated arguments, and `@CsvFileSource` for reading an actual CSV file. `@CsvFileSource` exists but is uncommon — driving tests from an external data file makes them slower and dependent on something outside the repository. In production the data stays small, hardcoded and version-controlled next to the test.
+
 ### 👨‍💻 Activity (15 minutes)
 
 There are two tasks. Both tests go in `DemoServiceTest`.
@@ -254,8 +297,10 @@ There are two tasks. Both tests go in `DemoServiceTest`.
 **Task 1 — test an existing method.**
 `formatFullName` is already in `DemoService`. Write a unit test for it. You only write the test; the method is already there.
 
-**Task 2 — add a new method, then test it.**
-Add `isSeniorCustomer` to `DemoService`, then write a unit test for it:
+Use a plain `@Test` for Task 1 and a `@ParameterizedTest` for Task 2.
+
+**Task 2 — add a new method, then test it with multiple values.**
+Add `isSeniorCustomer` to `DemoService`:
 
 ```java
 public boolean isSeniorCustomer(int yearOfBirth, int currentYear) {
@@ -263,13 +308,26 @@ public boolean isSeniorCustomer(int yearOfBirth, int currentYear) {
 }
 ```
 
-**Requirements for both tests:**
+Then write a `@ParameterizedTest` for it using these rows:
+
+```java
+@CsvSource({
+    "1950, 2025, true",    // 75 years old
+    "1965, 2025, true",    // exactly 60 — the boundary
+    "1966, 2025, false",   // 59 — just under
+    "1990, 2025, false"    // 35 years old
+})
+```
+
+Your method signature takes three parameters: `int yearOfBirth`, `int currentYear`, `boolean expected`. Use `assertEquals(expected, actual)`.
+
+**Requirements for both tasks:**
 
 - Follow the Arrange-Act-Assert pattern
 - Use the `methodName_scenario_expectedBehaviour` naming convention
 - Rely on the `@BeforeEach` method — neither test should create its own `DemoService`
 
-**Think about:** for `isSeniorCustomer`, what happens at exactly 60? Write a test for the boundary, not just an obvious case in the middle. Boundary conditions are where most production bugs actually live.
+**Think about:** rows 2 and 3 are the ones that matter. The 75-year-old and the 35-year-old pass whether the code says `>= 60` or `> 60`. Only the pair either side of the boundary can tell those two apart. Boundary conditions are where most production bugs actually live.
 
 ---
 
